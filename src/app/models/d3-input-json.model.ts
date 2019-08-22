@@ -19,6 +19,7 @@ export class Node{
     height: number;
     roi: Roi;
     fullFrameRoi: FullFrameRoi;
+    name: string
 }
 
 export class D3InputJson{

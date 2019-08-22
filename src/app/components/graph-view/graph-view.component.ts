@@ -1,10 +1,10 @@
 import { Component, OnInit } from '@angular/core';
 import { DomSanitizer } from '@angular/platform-browser';
-import { RootObject } from "../../models/person-clustering.model";
+import { RootObject } from '../../models/person-clustering.model';
 import * as jsonData from '../../../assets/result.json';
 import { D3InputJson, Link, Node, FullFrameRoi, Roi } from '../../models/d3-input-json.model';
 import * as d3 from 'd3';
-import { Selection, SimulationNodeDatum } from 'd3';
+import { Selection, SimulationNodeDatum, text } from 'd3';
 
 @Component({
   selector: 'app-graph-view',
@@ -48,8 +48,8 @@ export class GraphViewComponent implements OnInit {
       links: Link[0] = [],
       nodes: Node[0] = []
     }
-    inputJson.P1_associatedBestShots.forEach(element => {
-      //add link objects 
+    inputJson.P1_associatedBestShots.forEach((element, index) => {
+      //add link objects
       let linkObject: Link;
       linkObject = this.mapLinkObject(inputJson.P1_BestShots[0]._id, element._id);
       outputJson.links.push(linkObject);
@@ -57,14 +57,14 @@ export class GraphViewComponent implements OnInit {
       //add node objects
       let nodeObject: Node;
       nodeObject = this.mapNodeObject(element._id, element.bytearray.$binary, element.fullframeWidth, element.fullframeHeight,
-        element.width, element.height, element.roi, element.fullframeRoi);
+        element.width, element.height, element.roi, element.fullframeRoi, "Associate_" + index++);
       outputJson.nodes.push(nodeObject);
     });
     //add suspect node object from P1_BestShots array's first object
     let suspectNodeObject: Node;
     let suspectObj = inputJson.P1_BestShots[0];
     suspectNodeObject = this.mapNodeObject(suspectObj._id, suspectObj.bytearray.$binary, suspectObj.fullframeWidth, suspectObj.fullframeHeight,
-      suspectObj.width, suspectObj.height, suspectObj.roi, suspectObj.fullframeRoi);
+      suspectObj.width, suspectObj.height, suspectObj.roi, suspectObj.fullframeRoi, "Suspect");
     outputJson.nodes.push(suspectNodeObject);
 
     return outputJson;
@@ -72,7 +72,7 @@ export class GraphViewComponent implements OnInit {
 
   //to map node object
   mapNodeObject(id: string, imgByteCode: string, fullFrameWidth: number, fullFrameHeight: number, width: number, height: number,
-    roi: Roi, fullFrameRoi: FullFrameRoi): Node {
+    roi: Roi, fullFrameRoi: FullFrameRoi, name: string): Node {
     let node = new Node();
     node.id = id;
     node.imgByteCode = imgByteCode;
@@ -82,6 +82,7 @@ export class GraphViewComponent implements OnInit {
     node.height = height;
     node.roi = roi;
     node.fullFrameRoi = fullFrameRoi;
+    node.name = name;
     return node;
   }
 
@@ -93,7 +94,7 @@ export class GraphViewComponent implements OnInit {
     return link;
   }
 
-  //d3js Graph implementation 
+  //d3js Graph implementation
 
   ngAfterContentInit() {
 
@@ -112,73 +113,114 @@ export class GraphViewComponent implements OnInit {
 
     this.linkEnter = this.link.enter()
     this.lines = this.linkEnter.append("line")
+      .attr("stroke-width", 2)
       .attr("stroke", "#a5a5a5");
 
     //Create nodes as circles
     this.node = this.vis.append("g")
-      .attr('class', 'nodes')
       .selectAll('circle')
       .data(this.root.nodes);
 
-    this.nodeEnter = this.node.enter();
+    this.nodeEnter = this.node.enter().append('g')
+      .attr("class", "nodes")
+      .attr("transform", function (d) { return "translate(" + d.x + "," + d.y + ")"; });
 
-    this.circles = this.nodeEnter.append('circle')
-      .attr('r', 5)
-      .style("fill", "#555555");
-
-    this.images = this.nodeEnter.append("image")
-      .attr("xlink:href", function (d) { return 'data:image/jpeg;base64,' + d['imgByteCode']; })
-      // .attr("xlink:href", "http://marvel-force-chart.surge.sh/marvel_force_chart_img/top_ironman.png")
-      .attr("x", function (d) { return d.cx; })
-      .attr("y", function (d) { return d.cy; })
+    this.nodeEnter.append("defs")
+      .append("pattern")
+      .attr("id", function (d) { if (d.id) return d.id; else null; })
+      .attr("height", 1)
+      .attr("width", 1)
+      .attr("x", "0")
+      .attr("y", "0")
+      .append("image")
+      .attr("id", function (d) { if (d.id) return "id" + d.id; else null; })
       .attr("height", 50)
-      .attr("width", 50);
+      .attr("width", 50)
+      .attr("x", function (d) { return -5; })
+      .attr("y", function (d) { return -5; })
+      .attr("xlink:href", function (d) { if (d.imgByteCode) return 'data:image/jpeg;base64,' + d.imgByteCode; else null; });
+
+    // Append a circle
+    this.circles = this.nodeEnter.append("circle")
+      .attr("r", 20)
+      .attr("stroke", "#a5a5a5")
+      .style("stroke-width", 1)
+      .attr("fill", function (d) { if (d.id) return "url(#" + d.id + ")"; else null; });
+
+    // this.circles = this.nodeEnter.append('circle')
+    //   .attr('r', 10)
+    //   .style("fill", "#555555");
+
+
+    // this.images = this.nodeEnter.append("image")
+    //   .attr("xlink:href", function (d) { return 'data:image/jpeg;base64,' + d['imgByteCode']; })
+    //   // .attr("xlink:href", "http://marvel-force-chart.surge.sh/marvel_force_chart_img/top_ironman.png")
+    //   .attr("x", -25)
+    //   .attr("y", -25)
+    //   .attr("height", 50)
+    //   .attr("width", 50);
 
     this.force = d3.forceSimulation(this.root.nodes)
       .force('link', d3.forceLink(this.root.links).distance(100).strength(0.3).id((d) => { return d['id']; }))
       .force('x', d3.forceX(this.w))
       .force('y', d3.forceY(this.h))
-      .force('charge', d3.forceManyBody())
+      .force('charge', d3.forceManyBody().strength(-1300))
       .force('center', d3.forceCenter(this.w / 2, this.h / 2));
 
-    this.images
+    this.circles
       .on('mouseenter', (d, i, n) => {
-        // select element in current context
         console.log("enter");
-        const s = d3.select(n[i]);
-        console.log(s);
+        // select element in current context
+        const s = d3.select(n[i]).attr('fill');
+        const id = s.slice(5, -1);
+        const imageId = "#id" + id;
+        const textId = "#text" + id;
+
         d3.select(n[i])
           .transition()
-          .attr("r", 10);
-        // .attr("x", function (d) { return -60; })
-        // .attr("y", function (d) { return -60; })
-        // .attr("height", 100)
-        // .attr("width", 100);
+          .attr("r", 40);
+
+        d3.select(imageId)
+          .attr("x", function (d) { return -10 })
+          .attr("y", function (d) { return -10 })
+          .attr("height", 100)
+          .attr("width", 100);
+
+        d3.select(textId)
+          .attr("x", function (d) { return 40 })
+          .attr("y", function (d) { return 20 });
+
       })
       // set back
       .on('mouseleave', (d, i, n) => {
         console.log("leave");
+        const s = d3.select(n[i]).attr('fill');
+        const id = s.slice(5, -1);
+        const imageId = "#id" + id;
+        const textId = "#text" + id;
+
         d3.select(n[i])
           .transition()
-          .attr("r", 5);
-        // .attr("x", function (d) { return -25; })
-        // .attr("y", function (d) { return -25; })
-        // .attr("height", 50)
-        // .attr("width", 50);
-      });
+          .attr("r", 20);
 
-    this.images.on('click', () => {
-      console.log("click");
-      // d3.selectAll("circle").transition().style("fill", "red").duration(2000);
-      // d3.selectAll("line").transition().attr("stroke", "red").duration(2000);
-      this.nodeEnter
-        .append("text")
-        // .attr("class", "nodetext")
-        .attr("x", (d: SimulationNodeDatum) => { return d.x + 500 })
-        .attr("y", (d: SimulationNodeDatum) => { return d.y + 500 })
-        .attr("fill", "black")
-        .text("hello");
-    })
+        d3.select(imageId)
+          .attr("x", function (d) { return -5 })
+          .attr("y", function (d) { return -5 })
+          .attr("height", 50)
+          .attr("width", 50);
+
+        d3.select(textId)
+          .attr("x", function (d) { return 20 })
+          .attr("y", function (d) { return 10 })
+
+      });
+    this.nodeEnter
+      .append("text")
+      .attr("id", (d) => { return "text" + d.id; })
+      .attr("x", 20)
+      .attr("y", 10)
+      .attr("fill", "black")
+      .text((d) => { return d['name'] });
 
     // this.node.on('dblclick', () => {
     //   console.log("double click");
@@ -193,13 +235,19 @@ export class GraphViewComponent implements OnInit {
         .attr("x2", function (d) { return d.target.x; })
         .attr("y2", function (d) { return d.target.y; });
 
-      this.circles
-        .attr('cx', function (d) { return d.x; })
-        .attr('cy', function (d) { return d.y; });
+      this.vis.selectAll("g.nodes").attr("transform", (d) => {
+        d.x = Math.max(6, Math.min(this.w - 6, d.x));
+        d.y = Math.max(6, Math.min(this.h - 6, d.y));
+        return "translate(" + d.x + "," + d.y + ")";
+      });
 
-      this.images
-        .attr('cx', function (d) { return d.x; })
-        .attr('cy', function (d) { return d.y; });
+      // this.nodeEnter
+      //   .attr('cx', function (d) { return d.x; })
+      //   .attr('cy', function (d) { return d.y; });
+
+      // this.images
+      //   .attr('cx', function (d) { return d.x; })
+      //   .attr('cy', function (d) { return d.y; });
 
       // this.labels.attr('transform', function (d) {
       //   return 'translate(' + d.x + ',' + d.y + ')';
